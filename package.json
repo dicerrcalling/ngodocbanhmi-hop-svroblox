@@ -1,0 +1,11 @@
+{
+  "name": "hophub-server-hopper",
+  "version": "2.0.0",
+  "description": "Premium Roblox Multi-Game Server Hopper Dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "HopHub Community",
+  "license": "ISC"
+}

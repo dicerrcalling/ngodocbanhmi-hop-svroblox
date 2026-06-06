@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "buildCommand": "echo 'No build step required'",
+  "outputDirectory": "."
+}

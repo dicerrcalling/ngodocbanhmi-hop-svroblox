@@ -1032,16 +1032,35 @@ async function fetchRealServers(placeId) {
   // Cách này bỏ qua Vercel của bạn, gọi thẳng Roblox API và vượt tường lửa nhà mạng
   const serverArray = data ? (data.servers || data.data) : null;
   if (!serverArray || !Array.isArray(serverArray) || serverArray.length === 0) {
+    const robloxUrl = `https://games.roblox.com/v1/games/${placeId}/servers/Public?limit=100`;
+    
+    // Thử Proxy 1: corsproxy.io
     try {
-      console.log("Using direct Roblox CORS proxy fallback...");
-      const robloxUrl = `https://games.roblox.com/v1/games/${placeId}/servers/Public?limit=100`;
+      console.log("Using direct Roblox CORS proxy fallback (corsproxy.io)...");
       const proxyUrl = `https://corsproxy.io/?${robloxUrl}`;
       response = await fetch(proxyUrl);
       if (response.ok) {
-        data = await response.json();
+        const temp = await response.json();
+        if (temp && (temp.data || temp.servers)) data = temp;
       }
     } catch (e) {
-      console.error("Direct Roblox CORS proxy fallback failed...", e);
+      console.warn("corsproxy.io failed, trying allorigins...", e);
+    }
+
+    // Thử Proxy 2: allorigins (chậm hơn nhưng cực kỳ uy tín, vượt qua mọi cấm cản)
+    if (!data || !(data.data || data.servers)) {
+      try {
+        console.log("Using direct Roblox CORS proxy fallback (allorigins)...");
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(robloxUrl)}`;
+        response = await fetch(proxyUrl);
+        if (response.ok) {
+          const wrapper = await response.json();
+          const temp = JSON.parse(wrapper.contents);
+          if (temp && (temp.data || temp.servers)) data = temp;
+        }
+      } catch (e) {
+        console.error("allorigins fallback failed...", e);
+      }
     }
   }
 

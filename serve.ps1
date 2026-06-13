@@ -39,14 +39,35 @@ try {
                 $response.OutputStream.Write($bytes, 0, $bytes.Length)
             } else {
                 try {
-                    $robloxUrl = "https://games.roblox.com/v1/games/$placeId/servers/Public?limit=100"
                     $userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                    $robloxResponse = & "C:\Windows\System32\curl.exe" -s -H "User-Agent: $userAgent" $robloxUrl
-                    $jsonString = [string]::Join("`r`n", $robloxResponse)
+                    $allServers = @()
+                    $nextCursor = ""
+                    
+                    for ($i = 0; $i -lt 3; $i++) {
+                        $cursorParam = if ($nextCursor) { "&cursor=$nextCursor" } else { "" }
+                        $robloxUrl = "https://games.roblox.com/v1/games/$placeId/servers/Public?limit=100$cursorParam"
+                        $robloxResponse = & "C:\Windows\System32\curl.exe" -s -H "User-Agent: $userAgent" $robloxUrl
+                        $jsonString = [string]::Join("`r`n", $robloxResponse)
+                        
+                        if ($jsonString) {
+                            $parsed = ConvertFrom-Json $jsonString
+                            if ($parsed -and $parsed.data) {
+                                $allServers += $parsed.data
+                                $nextCursor = $parsed.nextPageCursor
+                                if (-not $nextCursor) { break }
+                            } else {
+                                break
+                            }
+                        } else {
+                            break
+                        }
+                    }
+                    
+                    $resultJson = @{ data = $allServers } | ConvertTo-Json -Depth 5
                     
                     $response.StatusCode = 200
                     $response.ContentType = "application/json; charset=utf-8"
-                    [byte[]]$bytes = [System.Text.Encoding]::UTF8.GetBytes($jsonString)
+                    [byte[]]$bytes = [System.Text.Encoding]::UTF8.GetBytes($resultJson)
                     $response.ContentLength64 = $bytes.Length
                     $response.OutputStream.Write($bytes, 0, $bytes.Length)
                 } catch {

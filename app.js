@@ -88,7 +88,7 @@ let state = {
   maxPlayers: 12,
   
   // Lọc & Sắp xếp
-  activeFilter: "all", 
+  activeFilter: localStorage.getItem('hophub_active_filter') || "all", 
   activeSort: "asc",   
   viewMode: localStorage.getItem('hophub_view_mode') || 'GRID',
   theme: localStorage.getItem('hophub_theme') || 'dark',
@@ -472,11 +472,25 @@ function setupEventListeners() {
   // 3. Bộ lọc số lượng người chơi (Segmented control)
   const filterChips = document.querySelectorAll('#filter-players .segment-btn');
   filterChips.forEach(chip => {
-    chip.addEventListener('click', () => {
-      filterChips.forEach(c => c.classList.remove('active'));
+    // Đồng bộ trạng thái active ban đầu từ state
+    if (chip.dataset.value === state.activeFilter) {
       chip.classList.add('active');
+      chip.setAttribute('aria-checked', 'true');
+    } else {
+      chip.classList.remove('active');
+      chip.setAttribute('aria-checked', 'false');
+    }
+
+    chip.addEventListener('click', () => {
+      filterChips.forEach(c => {
+        c.classList.remove('active');
+        c.setAttribute('aria-checked', 'false');
+      });
+      chip.classList.add('active');
+      chip.setAttribute('aria-checked', 'true');
       
       state.activeFilter = chip.dataset.value;
+      localStorage.setItem('hophub_active_filter', state.activeFilter);
       state.visibleCount = 12; // reset phân trang
       processAndRenderServers();
     });
@@ -996,19 +1010,44 @@ function generateMockServers() {
 // TẢI DỮ LIỆU SERVER THỰC TẾ TỪ ROBLOX
 // ==========================================
 async function fetchRealServers(placeId) {
-  const url = `/api/servers?placeId=${placeId}`;
-  
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+  let response;
+  let data;
+
+  try {
+    // 1. Thử tải qua URL tương đối (hoạt động khi chạy Vercel hoặc server local serve.ps1)
+    response = await fetch(`/api/servers?placeId=${placeId}`);
+    if (response.ok) {
+      data = await response.json();
+    }
+  } catch (e) {
+    console.warn("Relative fetch failed, trying Vercel API fallback...", e);
   }
-  
-  const data = await response.json();
-  if (!data || !data.data || !Array.isArray(data.data)) {
+
+  // 2. Nếu chạy file:// hoặc fetch tương đối thất bại, tải qua API Vercel dùng CORS Proxy làm dự phòng
+  if (!data) {
+    try {
+      const targetUrl = `https://nau-cam-tool.vercel.app/api/servers?placeId=${placeId}`;
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+      response = await fetch(proxyUrl);
+      if (response.ok) {
+        const wrapper = await response.json();
+        data = JSON.parse(wrapper.contents);
+      }
+    } catch (e) {
+      console.error("CORS proxy fetch failed...", e);
+    }
+  }
+
+  if (!data) {
+    throw new Error("Không thể kết nối đến máy chủ API (Failed to fetch)");
+  }
+
+  const serverArray = data.servers || data.data;
+  if (!serverArray || !Array.isArray(serverArray)) {
     throw new Error("Dữ liệu trả về không đúng định dạng Roblox");
   }
-  
-  const servers = data.data.map(server => {
+
+  const servers = serverArray.map(server => {
     const playing = server.playing || 0;
     const maxPlayers = server.maxPlayers || state.maxPlayers;
     const fps = Math.round(server.fps || 60);

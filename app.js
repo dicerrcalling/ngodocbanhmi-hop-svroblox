@@ -101,13 +101,13 @@ let state = {
   openedServers: new Set(JSON.parse(localStorage.getItem('hophub_opened_servers') || '[]')),
   
   // Auto-Refresh
-  autoRefreshEnabled: false,
+  autoRefreshEnabled: localStorage.getItem('hophub_auto_refresh_enabled') === 'true',
   autoRefreshTimer: 30,
   autoRefreshLoop: null,
   
   // Auto-Hop
-  autoHopEnabled: false,
-  autoHopTimer: 60,
+  autoHopEnabled: localStorage.getItem('hophub_auto_hop_enabled') === 'true',
+  autoHopTimer: parseInt(localStorage.getItem('hophub_auto_hop_timer_val') || '60'),
   autoHopLoop: null,
   hopsCount: parseInt(localStorage.getItem('hophub_hops_today') || '0'),
   lastHopReset: localStorage.getItem('hophub_hops_last_reset') || ''
@@ -502,8 +502,12 @@ function setupEventListeners() {
   // 6. Auto-Refresh checkbox listener
   const autoRefreshCheck = document.getElementById('server-hop-auto-refresh');
   if (autoRefreshCheck) {
+    autoRefreshCheck.checked = state.autoRefreshEnabled;
+    document.getElementById('auto-refresh-timer').textContent = `${state.autoRefreshTimer}s`;
+
     autoRefreshCheck.addEventListener('change', (e) => {
       state.autoRefreshEnabled = e.target.checked;
+      localStorage.setItem('hophub_auto_refresh_enabled', state.autoRefreshEnabled);
       state.autoRefreshTimer = 30;
       document.getElementById('auto-refresh-timer').textContent = `30s`;
       
@@ -519,8 +523,15 @@ function setupEventListeners() {
   const countdownSpan = document.getElementById('auto-hop-countdown-span');
   
   if (autoHopCheck && timerSelect) {
+    autoHopCheck.checked = state.autoHopEnabled;
+    timerSelect.value = localStorage.getItem('hophub_auto_hop_timer_val') || '60';
+    if (state.autoHopEnabled && countdownSpan) {
+      countdownSpan.textContent = ` (${state.autoHopTimer}s)`;
+    }
+
     autoHopCheck.addEventListener('change', (e) => {
       state.autoHopEnabled = e.target.checked;
+      localStorage.setItem('hophub_auto_hop_enabled', state.autoHopEnabled);
       if (state.autoHopEnabled) {
         state.autoHopTimer = parseInt(timerSelect.value);
         if (countdownSpan) countdownSpan.textContent = ` (${state.autoHopTimer}s)`;
@@ -531,6 +542,7 @@ function setupEventListeners() {
     });
     
     timerSelect.addEventListener('change', () => {
+      localStorage.setItem('hophub_auto_hop_timer_val', timerSelect.value);
       if (state.autoHopEnabled) {
         state.autoHopTimer = parseInt(timerSelect.value);
         if (countdownSpan) countdownSpan.textContent = ` (${state.autoHopTimer}s)`;
@@ -624,7 +636,7 @@ function syncGameSelectorUI(placeId, name) {
 // ==========================================
 // TẢI VÀ GIẢ LẬP SERVER CHO MỘT GAME (LOAD)
 // ==========================================
-function loadGame(placeId, name) {
+async function loadGame(placeId, name) {
   const loader = document.getElementById('loading-overlay');
   const grid = document.getElementById('servers-grid');
   
@@ -646,14 +658,18 @@ function loadGame(placeId, name) {
   // Cập nhật bảng giá dịch vụ theo game
   renderServices(placeId, name);
 
-  // Giả lập độ trễ nạp dữ liệu mạng mượt mà (300 - 600ms)
-  setTimeout(() => {
+  try {
+    await fetchRealServers(placeId);
+    processAndRenderServers();
+    showToast('success', `HopHub: Tải thành công ${state.allServers.length} server của ${name}!`);
+  } catch (error) {
+    console.error(error);
+    showToast('error', `Lỗi tải server từ Roblox: ${error.message}. Đang dùng server giả lập làm dự phòng.`);
     generateMockServers();
     processAndRenderServers();
-    
+  } finally {
     if (loader) loader.classList.add('hidden');
-    showToast('success', `HopHub: Tải thành công ${state.allServers.length} server của ${name}!`);
-  }, 400);
+  }
 }
 
 // Cập nhật thông báo sự kiện / Boss theo game
@@ -977,6 +993,46 @@ function generateMockServers() {
 }
 
 // ==========================================
+// TẢI DỮ LIỆU SERVER THỰC TẾ TỪ ROBLOX
+// ==========================================
+async function fetchRealServers(placeId) {
+  const url = `/api/servers?placeId=${placeId}`;
+  
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  
+  const data = await response.json();
+  if (!data || !data.data || !Array.isArray(data.data)) {
+    throw new Error("Dữ liệu trả về không đúng định dạng Roblox");
+  }
+  
+  const servers = data.data.map(server => {
+    const playing = server.playing || 0;
+    const maxPlayers = server.maxPlayers || state.maxPlayers;
+    const fps = Math.round(server.fps || 60);
+    const ping = Math.round(server.ping || 100);
+    
+    let tag = "Thường";
+    if (playing === 1) tag = "Mới quét";
+    else if (ping < 50) tag = "Mượt";
+    else if (fps >= 57 && playing < 4) tag = "Ổn định";
+    
+    return {
+      id: server.id,
+      playing,
+      maxPlayers,
+      fps,
+      ping,
+      tag
+    };
+  });
+  
+  state.allServers = servers;
+}
+
+// ==========================================
 // XỬ LÝ LỌC & SẮP XẾP CACHE DỮ LIỆU
 // ==========================================
 function processAndRenderServers() {
@@ -1240,11 +1296,18 @@ function tickAutoRefresh() {
     const loader = document.getElementById('loading-overlay');
     if (loader) loader.classList.remove('hidden');
     
-    setTimeout(() => {
-      generateMockServers();
-      processAndRenderServers();
-      if (loader) loader.classList.add('hidden');
-    }, 400);
+    fetchRealServers(state.placeId)
+      .then(() => {
+        processAndRenderServers();
+        if (loader) loader.classList.add('hidden');
+      })
+      .catch((error) => {
+        console.error(error);
+        showToast('error', 'Tự động quét lỗi, đang tải lại cache...');
+        generateMockServers();
+        processAndRenderServers();
+        if (loader) loader.classList.add('hidden');
+      });
   }
 }
 

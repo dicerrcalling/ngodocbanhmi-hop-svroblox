@@ -49,8 +49,8 @@ module.exports = async (req, res) => {
     let allServers = [];
     let nextCursor = '';
     
-    // Tải tối đa 3 trang (300 servers) để tăng khả năng tìm thấy server vắng người
-    for (let i = 0; i < 3; i++) {
+    // Tải tối đa 12 trang (1200 servers) để tăng khả năng tìm thấy server vắng người
+    for (let i = 0; i < 12; i++) {
       const pageData = await fetchPage(placeId, nextCursor);
       if (pageData && Array.isArray(pageData.data)) {
         allServers = allServers.concat(pageData.data);

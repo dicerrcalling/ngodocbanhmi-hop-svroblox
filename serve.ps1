@@ -43,7 +43,7 @@ try {
                     $allServers = @()
                     $nextCursor = ""
                     
-                    for ($i = 0; $i -lt 3; $i++) {
+                    for ($i = 0; $i -lt 12; $i++) {
                         $cursorParam = if ($nextCursor) { "&cursor=$nextCursor" } else { "" }
                         $robloxUrl = "https://games.roblox.com/v1/games/$placeId/servers/Public?limit=100$cursorParam"
                         $robloxResponse = & "C:\Windows\System32\curl.exe" -s -H "User-Agent: $userAgent" $robloxUrl

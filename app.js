@@ -1010,19 +1010,48 @@ function generateMockServers() {
 // TẢI DỮ LIỆU SERVER THỰC TẾ TỪ ROBLOX
 // ==========================================
 async function fetchRealServers(placeId) {
-  const url = `/api/servers?placeId=${placeId}`;
-  
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+  let response;
+  let data;
+  let errorMsg = "";
+
+  // 1. Thử tải qua API tương đối của website (localhost hoặc Vercel của chính bạn)
+  try {
+    const url = `/api/servers?placeId=${placeId}`;
+    response = await fetch(url);
+    if (response.ok) {
+      data = await response.json();
+    } else {
+      errorMsg = `HTTP status ${response.status}`;
+    }
+  } catch (e) {
+    errorMsg = e.message;
+    console.warn("Relative fetch failed, trying CORS proxy fallback...", e);
   }
-  
-  const data = await response.json();
-  if (!data || !data.data || !Array.isArray(data.data)) {
-    throw new Error("Dữ liệu trả về không đúng định dạng Roblox");
+
+  // 2. Dự phòng: Nếu API của bạn lỗi hoặc không trả về danh sách, tải trực tiếp từ Roblox qua CORS Proxy
+  // Cách này bỏ qua Vercel của bạn, gọi thẳng Roblox API và vượt tường lửa nhà mạng
+  const serverArray = data ? (data.servers || data.data) : null;
+  if (!serverArray || !Array.isArray(serverArray) || serverArray.length === 0) {
+    try {
+      console.log("Using direct Roblox CORS proxy fallback...");
+      const robloxUrl = `https://games.roblox.com/v1/games/${placeId}/servers/Public?limit=100`;
+      const proxyUrl = `https://corsproxy.io/?${robloxUrl}`;
+      response = await fetch(proxyUrl);
+      if (response.ok) {
+        data = await response.json();
+      }
+    } catch (e) {
+      console.error("Direct Roblox CORS proxy fallback failed...", e);
+    }
   }
-  
-  const servers = data.data.map(server => {
+
+  // Lấy danh sách server cuối cùng từ dữ liệu đã phân tích
+  const finalServers = data ? (data.servers || data.data) : null;
+  if (!finalServers || !Array.isArray(finalServers)) {
+    throw new Error(errorMsg || "Dữ liệu trả về không đúng định dạng Roblox");
+  }
+
+  const servers = finalServers.map(server => {
     const playing = server.playing || 0;
     const maxPlayers = server.maxPlayers || state.maxPlayers;
     const fps = Math.round(server.fps || 60);

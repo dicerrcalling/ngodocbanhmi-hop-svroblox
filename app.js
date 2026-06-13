@@ -1010,44 +1010,19 @@ function generateMockServers() {
 // TẢI DỮ LIỆU SERVER THỰC TẾ TỪ ROBLOX
 // ==========================================
 async function fetchRealServers(placeId) {
-  let response;
-  let data;
-
-  try {
-    // 1. Thử tải qua URL tương đối (hoạt động khi chạy Vercel hoặc server local serve.ps1)
-    response = await fetch(`/api/servers?placeId=${placeId}`);
-    if (response.ok) {
-      data = await response.json();
-    }
-  } catch (e) {
-    console.warn("Relative fetch failed, trying Vercel API fallback...", e);
+  const url = `/api/servers?placeId=${placeId}`;
+  
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
   }
-
-  // 2. Nếu chạy file:// hoặc fetch tương đối thất bại, tải qua API Vercel dùng CORS Proxy làm dự phòng
-  if (!data) {
-    try {
-      const targetUrl = `https://nau-cam-tool.vercel.app/api/servers?placeId=${placeId}`;
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-      response = await fetch(proxyUrl);
-      if (response.ok) {
-        const wrapper = await response.json();
-        data = JSON.parse(wrapper.contents);
-      }
-    } catch (e) {
-      console.error("CORS proxy fetch failed...", e);
-    }
-  }
-
-  if (!data) {
-    throw new Error("Không thể kết nối đến máy chủ API (Failed to fetch)");
-  }
-
-  const serverArray = data.servers || data.data;
-  if (!serverArray || !Array.isArray(serverArray)) {
+  
+  const data = await response.json();
+  if (!data || !data.data || !Array.isArray(data.data)) {
     throw new Error("Dữ liệu trả về không đúng định dạng Roblox");
   }
-
-  const servers = serverArray.map(server => {
+  
+  const servers = data.data.map(server => {
     const playing = server.playing || 0;
     const maxPlayers = server.maxPlayers || state.maxPlayers;
     const fps = Math.round(server.fps || 60);

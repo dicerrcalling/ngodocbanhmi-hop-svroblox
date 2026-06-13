@@ -672,6 +672,9 @@ async function loadGame(placeId, name) {
   // Cập nhật bảng giá dịch vụ theo game
   renderServices(placeId, name);
 
+  // Cập nhật mã script Lua tương ứng cho game và domain chạy
+  updateLuaScriptText(placeId);
+
   try {
     await fetchRealServers(placeId);
     processAndRenderServers();
@@ -684,6 +687,137 @@ async function loadGame(placeId, name) {
   } finally {
     if (loader) loader.classList.add('hidden');
   }
+}
+
+// ==========================================
+// CẬP NHẬT MÃ SCRIPT LUA TỰ ĐỘNG THEO GAME
+// ==========================================
+function updateLuaScriptText(placeId) {
+  const textarea = document.getElementById('lua-script-textarea');
+  if (!textarea) return;
+
+  const currentOrigin = window.location.origin;
+  const isLocal = currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1') || currentOrigin.startsWith('file://');
+  
+  let apiUrlText = "";
+  let queryText = "";
+  
+  if (isLocal) {
+    apiUrlText = `local allServers = {}
+local cursor = ""
+for i = 1, 6 do -- Quet toi da 6 trang (600 servers)
+    local url = "https://corsproxy.io/?https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?limit=100"
+    if cursor ~= "" then
+        url = url .. "&cursor=" .. cursor
+    end
+    local success, response = pcall(function()
+        return HttpService:GetAsync(url)
+    end)
+    if success and response then
+        local data = HttpService:JSONDecode(response)
+        if data and data.data and #data.data > 0 then
+            for _, s in ipairs(data.data) do
+                table.insert(allServers, s)
+            end
+            cursor = data.nextPageCursor or ""
+            if cursor == "" then break end
+        else
+            break
+        end
+    else
+        break
+    end
+    task.wait(0.1)
+end`;
+    queryText = `if #allServers > 0 then
+        -- Loc ra danh sach cac server vang (1-5 nguoi choi)
+        local targetPool = {}
+        for _, s in ipairs(allServers) do
+            if s.playing and s.playing >= 1 and s.playing <= 5 and s.id ~= game.JobId then
+                table.insert(targetPool, s)
+            end
+        end
+        
+        -- Neu khong co server vang, lay tat ca tru server hien tai
+        if #targetPool == 0 then
+            for _, s in ipairs(allServers) do
+                if s.id ~= game.JobId then
+                    table.insert(targetPool, s)
+                end
+            end
+        end
+        
+        if #targetPool > 0 then
+            local target = targetPool[math.random(1, #targetPool)]
+            if target and target.id then
+                TeleportService:TeleportToPlaceInstance(PlaceId, target.id, LocalPlayer)
+            end
+        else
+            warn("HopHub: Khong tim thay server de hop!")
+        end
+    else
+        warn("HopHub: Quet server that bai hoac khong co du lieu!")
+    end`;
+  } else {
+    apiUrlText = `local ApiUrl = "${currentOrigin}/api/servers?placeId=" .. PlaceId
+local allServers = {}
+local success, response = pcall(function()
+    return HttpService:GetAsync(ApiUrl)
+end)
+if success and response then
+    local data = HttpService:JSONDecode(response)
+    local servers = data and (data.data or data.servers)
+    if servers and #servers > 0 then
+        allServers = servers
+    end
+end`;
+    queryText = `if #allServers > 0 then
+        -- Loc ra danh sach cac server vang (1-5 nguoi choi)
+        local targetPool = {}
+        for _, s in ipairs(allServers) do
+            if s.playing and s.playing >= 1 and s.playing <= 5 and s.id ~= game.JobId then
+                table.insert(targetPool, s)
+            end
+        end
+        
+        -- Neu khong co server vang, lay tat ca tru server hien tai
+        if #targetPool == 0 then
+            for _, s in ipairs(allServers) do
+                if s.id ~= game.JobId then
+                    table.insert(targetPool, s)
+                end
+            end
+        end
+        
+        if #targetPool > 0 then
+            local target = targetPool[math.random(1, #targetPool)]
+            if target and target.id then
+                TeleportService:TeleportToPlaceInstance(PlaceId, target.id, LocalPlayer)
+            end
+        else
+            warn("HopHub: Khong tim thay server de hop!")
+        end
+    else
+        warn("HopHub: Quet server hoac goi API that bai!")
+    end`;
+  }
+
+  textarea.value = `-- HopHub Auto-Hop Roblox In-Game Script
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local PlaceId = game.PlaceId
+
+local function hopServer()
+    ${apiUrlText.split('\n').join('\n    ')}
+    
+    ${queryText.split('\n').join('\n    ')}
+end
+
+task.wait(2)
+hopServer()`;
 }
 
 // Cập nhật thông báo sự kiện / Boss theo game
@@ -1013,6 +1147,7 @@ async function fetchRealServers(placeId) {
   let response;
   let data;
   let errorMsg = "";
+  let allServers = [];
 
   // 1. Thử tải qua API tương đối của website (localhost hoặc Vercel của chính bạn)
   try {
@@ -1020,6 +1155,12 @@ async function fetchRealServers(placeId) {
     response = await fetch(url);
     if (response.ok) {
       data = await response.json();
+      if (data) {
+        const list = data.servers || data.data;
+        if (Array.isArray(list) && list.length > 0) {
+          allServers = list;
+        }
+      }
     } else {
       errorMsg = `HTTP status ${response.status}`;
     }
@@ -1030,47 +1171,67 @@ async function fetchRealServers(placeId) {
 
   // 2. Dự phòng: Nếu API của bạn lỗi hoặc không trả về danh sách, tải trực tiếp từ Roblox qua CORS Proxy
   // Cách này bỏ qua Vercel của bạn, gọi thẳng Roblox API và vượt tường lửa nhà mạng
-  const serverArray = data ? (data.servers || data.data) : null;
-  if (!serverArray || !Array.isArray(serverArray) || serverArray.length === 0) {
-    const robloxUrl = `https://games.roblox.com/v1/games/${placeId}/servers/Public?limit=100`;
+  if (!allServers || !Array.isArray(allServers) || allServers.length === 0) {
+    console.log("Using direct Roblox CORS proxy fallback with pagination loop...");
+    let nextCursor = "";
+    let proxyType = "corsproxy";
     
-    // Thử Proxy 1: corsproxy.io
-    try {
-      console.log("Using direct Roblox CORS proxy fallback (corsproxy.io)...");
-      const proxyUrl = `https://corsproxy.io/?${robloxUrl}`;
-      response = await fetch(proxyUrl);
-      if (response.ok) {
-        const temp = await response.json();
-        if (temp && (temp.data || temp.servers)) data = temp;
-      }
-    } catch (e) {
-      console.warn("corsproxy.io failed, trying allorigins...", e);
-    }
+    // Tải tối đa 12 trang (1200 servers) để tăng khả năng tìm thấy server vắng người
+    for (let i = 0; i < 12; i++) {
+      const cursorParam = nextCursor ? `&cursor=${nextCursor}` : "";
+      const robloxUrl = `https://games.roblox.com/v1/games/${placeId}/servers/Public?limit=100${cursorParam}`;
+      let pageData = null;
 
-    // Thử Proxy 2: allorigins (chậm hơn nhưng cực kỳ uy tín, vượt qua mọi cấm cản)
-    if (!data || !(data.data || data.servers)) {
-      try {
-        console.log("Using direct Roblox CORS proxy fallback (allorigins)...");
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(robloxUrl)}`;
-        response = await fetch(proxyUrl);
-        if (response.ok) {
-          const wrapper = await response.json();
-          const temp = JSON.parse(wrapper.contents);
-          if (temp && (temp.data || temp.servers)) data = temp;
+      if (proxyType === "corsproxy") {
+        try {
+          const proxyUrl = `https://corsproxy.io/?${robloxUrl}`;
+          const res = await fetch(proxyUrl);
+          if (res.ok) {
+            pageData = await res.json();
+          } else {
+            console.warn(`corsproxy.io failed with status ${res.status}, switching to allorigins...`);
+            proxyType = "allorigins";
+          }
+        } catch (e) {
+          console.warn("corsproxy.io failed, switching to allorigins...", e);
+          proxyType = "allorigins";
         }
-      } catch (e) {
-        console.error("allorigins fallback failed...", e);
+      }
+
+      if (proxyType === "allorigins" && !pageData) {
+        try {
+          const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(robloxUrl)}`;
+          const res = await fetch(proxyUrl);
+          if (res.ok) {
+            const wrapper = await res.json();
+            pageData = JSON.parse(wrapper.contents);
+          }
+        } catch (e) {
+          console.error("allorigins fallback failed...", e);
+          break;
+        }
+      }
+
+      if (pageData) {
+        const list = pageData.servers || pageData.data;
+        if (Array.isArray(list) && list.length > 0) {
+          allServers = allServers.concat(list);
+          nextCursor = pageData.nextPageCursor;
+          if (!nextCursor) break;
+        } else {
+          break;
+        }
+      } else {
+        break;
       }
     }
   }
 
-  // Lấy danh sách server cuối cùng từ dữ liệu đã phân tích
-  const finalServers = data ? (data.servers || data.data) : null;
-  if (!finalServers || !Array.isArray(finalServers)) {
+  if (!allServers || !Array.isArray(allServers) || allServers.length === 0) {
     throw new Error(errorMsg || "Dữ liệu trả về không đúng định dạng Roblox");
   }
 
-  const servers = finalServers.map(server => {
+  const servers = allServers.map(server => {
     const playing = server.playing || 0;
     const maxPlayers = server.maxPlayers || state.maxPlayers;
     const fps = Math.round(server.fps || 60);

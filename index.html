@@ -431,33 +431,8 @@
                   Sử dụng **mã Script Lua** này dán vào phần mềm chạy script Roblox của bạn (ví dụ: Codex, Wave, Delta, Fluxus,...) để tự động nhảy sang server vắng ngay lập tức khi đang ở trong game:
                 </p>
                 <div class="lua-copy-container">
-                  <textarea readonly style="outline: none;">-- HopHub Auto-Hop Roblox In-Game Script
-local HttpService = game:GetService("HttpService")
-local TeleportService = game:GetService("TeleportService")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-
-local PlaceId = game.PlaceId
-local ApiUrl = "https://nau-cam-tool.vercel.app/api/servers" -- Proxy API nạp server của HopHub
-
-local function hopServer()
-    local success, response = pcall(function()
-        return HttpService:GetAsync(ApiUrl)
-    end)
-    if success and response then
-        local data = HttpService:JSONDecode(response)
-        if data and data.success and data.servers and #data.servers > 0 then
-            local servers = data.servers
-            local target = servers[math.random(1, #servers)]
-            if target and target.id then
-                TeleportService:TeleportToPlaceInstance(PlaceId, target.id, LocalPlayer)
-            end
-        end
-    end
-end
-
-task.wait(2)
-hopServer()</textarea>
+                  <textarea id="lua-script-textarea" readonly style="outline: none;">-- HopHub Auto-Hop Roblox In-Game Script (Đang tải...)
+-- Vui lòng chờ giây lát hoặc chọn game khác để mã được nạp tự động.</textarea>
                   <button type="button" class="btn-quick-join" id="btn-copy-lua" style="padding: 6px 14px; font-size: 11px; font-weight: 700; align-self: flex-end; gap: 6px;">
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
                     <span>SAO CHÉP MÃ LUA</span>
@@ -654,7 +629,7 @@ hopServer()</textarea>
   <div id="toast-container"></div>
 
   <!-- Scripts -->
-  <script src="app.js?v=2.0.1"></script>
+  <script src="app.js?v=2.0.2"></script>
 </body>
 
 </html>
